@@ -1,46 +1,54 @@
-/// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[derive(serde::Deserialize, serde::Serialize)]
-#[serde(default)] // if we add new fields, give them default values when deserializing old state
-pub struct TemplateApp {
-    // Example stuff:
-    label: String,
+use egui::{Vec2b, Widget};
+use egui_plot::{Line, PlotPoint, PlotPoints, Points};
 
-    #[serde(skip)] // This how you opt-out of serialization of a field
-    value: f32,
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy)]
+pub struct Point {
+    x: f64,
+    y: f64,
 }
 
-impl Default for TemplateApp {
-    fn default() -> Self {
-        Self {
-            // Example stuff:
-            label: "Hello World!".to_owned(),
-            value: 2.7,
-        }
+impl Point {
+    pub fn new(x: f64, y: f64) -> Self {
+        Self { x, y }
     }
+}
+
+impl From<Point> for PlotPoint {
+    fn from(val: Point) -> Self {
+        PlotPoint::new(val.x, val.y)
+    }
+}
+
+impl From<Point> for PlotPoints {
+    fn from(val: Point) -> Self {
+        [val].into_points()
+    }
+}
+
+trait IntoPlotPoints {
+    fn into_points(self) -> PlotPoints;
+}
+
+impl<const N: usize> IntoPlotPoints for [Point; N] {
+    fn into_points(self) -> PlotPoints {
+        PlotPoints::Owned(self.iter().copied().map(|p| p.into()).collect())
+    }
+}
+
+pub struct TemplateApp {
+    points: Vec<Point>,
 }
 
 impl TemplateApp {
     /// Called once before the first frame.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // This is also where you can customize the look and feel of egui using
-        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
-
-        // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
-        if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        Self {
+            points: vec![Point::new(0.0, 0.0), Point::new(1.0, 1.0)],
         }
-
-        Default::default()
     }
 }
 
 impl eframe::App for TemplateApp {
-    /// Called by the frame work to save state before shutdown.
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, self);
-    }
-
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
@@ -66,30 +74,70 @@ impl eframe::App for TemplateApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("eframe template");
-
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(&mut self.label);
+            let mut i = 0;
+            let mut last = Point::new(0.0, 0.0);
+            self.points.retain_mut(|point| {
+                let mut retain = true;
+                ui.horizontal(|ui| {
+                    egui::DragValue::new(&mut point.x)
+                        .clamp_to_range(true)
+                        .range(last.x..=f64::MAX)
+                        .prefix("x: ")
+                        .speed(0.01)
+                        .ui(ui);
+                    egui::DragValue::new(&mut point.y)
+                        .prefix("y: ")
+                        .speed(0.01)
+                        .ui(ui);
+                    ui.label("Linear");
+                    if i >= 2 && ui.button("remove").clicked() {
+                        retain = false;
+                    }
+                });
+                i += 1;
+                last = *point;
+                retain
             });
 
-            ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                self.value += 1.0;
+            if ui.button("add point").clicked() {
+                let mut n = *self.points.last().unwrap();
+                n.x += 0.1;
+                self.points.push(n);
             }
-
-            ui.separator();
-
-            ui.add(egui::github_link_file!(
-                "https://github.com/emilk/eframe_template/blob/main/",
-                "Source code."
-            ));
-
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                powered_by_egui_and_eframe(ui);
-                egui::warn_if_debug_build(ui);
-            });
+            let mut txt = ron::ser::to_string(&self.points).unwrap();
+            let r = ui.text_edit_singleline(&mut txt);
+            if r.changed() {
+                if let Ok(p) = ron::de::from_str::<Vec<Point>>(&txt) {
+                    if p.len() >= 2 {
+                        self.points = p;
+                    }
+                }
+            }
+            egui_plot::Plot::new("plot")
+                .allow_drag(Vec2b::new(true, false))
+                .allow_zoom(Vec2b::new(true, false))
+                .allow_scroll(false)
+                .allow_double_click_reset(false)
+                .allow_boxed_zoom(false)
+                .show(ui, |plot_ui| {
+                    let mut last = *self.points.first().unwrap();
+                    plot_ui.points(
+                        Points::new(last)
+                            .radius(5.0)
+                            .filled(true)
+                            .shape(egui_plot::MarkerShape::Circle),
+                    );
+                    for p in self.points[1..].iter().copied() {
+                        plot_ui.points(
+                            Points::new(p)
+                                .radius(5.0)
+                                .filled(true)
+                                .shape(egui_plot::MarkerShape::Circle),
+                        );
+                        plot_ui.line(Line::new([last, p].into_points()));
+                        last = p;
+                    }
+                });
         });
     }
 }
