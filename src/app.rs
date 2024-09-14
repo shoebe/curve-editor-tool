@@ -76,15 +76,21 @@ impl eframe::App for TemplateApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut i = 0;
             let mut last = Point::new(0.0, 0.0);
+            let mut move_x = 0.0;
             self.points.retain_mut(|point| {
                 let mut retain = true;
                 ui.horizontal(|ui| {
-                    egui::DragValue::new(&mut point.x)
+                    point.x += move_x;
+                    let o_x = point.x;
+                    let r = egui::DragValue::new(&mut point.x)
                         .clamp_to_range(true)
                         .range(last.x..=f64::MAX)
                         .prefix("x: ")
                         .speed(0.01)
                         .ui(ui);
+                    if r.changed() {
+                        move_x = point.x - o_x;
+                    }
                     egui::DragValue::new(&mut point.y)
                         .prefix("y: ")
                         .speed(0.01)
@@ -119,6 +125,7 @@ impl eframe::App for TemplateApp {
                 .allow_scroll(false)
                 .allow_double_click_reset(false)
                 .allow_boxed_zoom(false)
+                .auto_bounds(Vec2b::new(false, true))
                 .show(ui, |plot_ui| {
                     let mut last = *self.points.first().unwrap();
                     plot_ui.points(
