@@ -22,6 +22,8 @@ log = "0.4"
 egui_plot = "0.28"
 ron = "0.8.1"
 
+total_cmp_float_wrapper = { git = "https://github.com/shoebe/total_cmp_float_wrapper" }
+
 # You only need serde if you want app persistence:
 serde = { version = "1", features = ["derive"] }
 
