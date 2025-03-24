@@ -237,18 +237,25 @@ fn intergral_of_points(points: &[Point]) -> f64 {
 
         let m = d_y / d_x;
 
-        if (next.y >= 0.0) == (last.y >= 0.0) {
-            // triangle
-            let area = d_x * d_y.abs() / 2.0;
-            integral += area * next.y.signum();
-        } else {
-            // 2 triangles, crossing zero
+        match (last.y >= 0.0, next.y >= 0.0) {
+            (true, true) | (false, false) => {
+                // triangle at top
+                integral += d_x * d_y.abs() / 2.0 * next.y.signum();
+                // square at bottom
+                integral += d_x * f64::min(last.y.abs(), next.y.abs()) * next.y.signum();
+            }
+            (true, false) | (false, true) => {
+                // 2 triangles, crossing zero
 
-            let t1 = last.y / m;
-            let t2 = d_x - t1;
+                let t1 = last.y / m;
+                let t2 = d_x - t1;
 
-            integral += t1 * last.y / 2.0;
-            integral += t2 * next.y / 2.0;
+                assert!(t1 >= 0.0);
+                assert!(t2 >= 0.0);
+
+                integral += t1 * last.y / 2.0;
+                integral += t2 * next.y / 2.0;
+            }
         }
 
         last = next;
