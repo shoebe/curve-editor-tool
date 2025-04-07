@@ -194,7 +194,7 @@ impl eframe::App for TemplateApp {
                 .allow_double_click_reset(false)
                 .allow_boxed_zoom(false)
                 .data_aspect(1.0)
-                .auto_bounds(Vec2b::new(false, true))
+                .auto_bounds(Vec2b::new(false, false))
                 .show(ui, |plot_ui| {
                     let mut last = *self.points.first().unwrap();
                     last.x *= self.x_mult;
