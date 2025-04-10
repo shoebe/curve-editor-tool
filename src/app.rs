@@ -188,7 +188,7 @@ impl eframe::App for TemplateApp {
             });
 
             egui_plot::Plot::new("plot")
-                .allow_drag(Vec2b::new(true, false))
+                .allow_drag(Vec2b::new(true, true))
                 .allow_zoom(Vec2b::new(true, true))
                 .allow_scroll(false)
                 .allow_double_click_reset(false)
