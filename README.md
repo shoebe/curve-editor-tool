@@ -1,6 +1,6 @@
 # Little line/point editor tool
 
-https://shoebe.github.io/bezier-editor-tool/
+https://shoebe.github.io/curve-editor-tool/
 
 
 ### Web Locally
