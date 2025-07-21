@@ -11,9 +11,9 @@
 
     <!-- config for our rust wasm binary. go to https://trunkrs.dev/assets/#rust for more customization -->
     
-<script type="module" nonce="cR7VkAoWSjdqXTECHxBgTQ==">
-import init, * as bindings from './curve-editor-7b557eb4582655b4.js';
-const wasm = await init('./curve-editor-7b557eb4582655b4_bg.wasm');
+<script type="module">
+import init, * as bindings from './curve-editor-7d35a7c1a721c576.js';
+const wasm = await init({ module_or_path: './curve-editor-7d35a7c1a721c576_bg.wasm' });
 
 
 window.wasmBindings = bindings;
@@ -25,7 +25,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
     <!-- this is the base url relative to which other urls will be constructed. trunk will insert this from the public-url option -->
     <base href="./" />
 
-    <link rel="icon" href="./favicon-f402c8741ce815ec.ico" integrity="sha384&#x2D;jNOAE6jgE03LznIulCTVP6BH4NrTuROFjP9wj8bV1UUMJKtZAvstFpIAP3PDcFpx"/>
+    <link rel="icon" href="./favicon-f402c8741ce815ec.ico" integrity="sha384-jNOAE6jgE03LznIulCTVP6BH4NrTuROFjP9wj8bV1UUMJKtZAvstFpIAP3PDcFpx"/>
 
 
     
@@ -126,9 +126,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
             }
         }
     </style>
-
-<link rel="modulepreload" href="./curve-editor-7b557eb4582655b4.js" crossorigin=anonymous integrity="sha384-laA6+752uKAvnVHx/hjA5iAQeHcBNHGB+33cZLiT+4jgdt9hU6qnED3bTfzSfBo6">
-<link rel="preload" href="./curve-editor-7b557eb4582655b4_bg.wasm" crossorigin=anonymous integrity="sha384-gRd/9+Jlsruh+Oweed5WtRfkOSk5FBK78g9ni76QiWnU7lzMYKdwxsplE9kvgkWW" as="fetch" type="application/wasm"></head>
+<link rel="modulepreload" href="./curve-editor-7d35a7c1a721c576.js" crossorigin="anonymous" integrity="sha384-Wp6/yS3nQuF9fMv74SdK5jj9uXsmYP//0+KCCSdWnWB3kLFOANSQyIU1sug+VSij"><link rel="preload" href="./curve-editor-7d35a7c1a721c576_bg.wasm" crossorigin="anonymous" integrity="sha384-+A6XIJsg9TTHFnHF6j96Vt3d4vi9CkFzol6MV8DeFN/KTvFilXvfT00rzsnY5a7Q" as="fetch" type="application/wasm"></head>
 
 <body>
     <!-- The WASM code will resize the canvas dynamically -->

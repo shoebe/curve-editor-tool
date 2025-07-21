@@ -2,41 +2,32 @@ use egui::{Vec2b, Widget};
 use egui_plot::{Line, PlotPoint, PlotPoints, Points};
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Copy)]
-pub struct Point {
+pub struct Value {
     x: f64,
     y: f64,
 }
 
-impl Point {
+impl Value {
     pub fn new(x: f64, y: f64) -> Self {
         Self { x, y }
     }
 }
 
-impl From<Point> for PlotPoint {
-    fn from(val: Point) -> Self {
-        PlotPoint::new(val.x, val.y)
-    }
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy)]
+pub struct Point {
+    time: f64,
+    val: Value,
 }
 
-impl From<Point> for PlotPoints {
-    fn from(val: Point) -> Self {
-        [val].into_points()
-    }
-}
-
-trait IntoPlotPoints {
-    fn into_points(self) -> PlotPoints;
-}
-
-impl<const N: usize> IntoPlotPoints for [Point; N] {
-    fn into_points(self) -> PlotPoints {
-        PlotPoints::Owned(self.iter().copied().map(|p| p.into()).collect())
+impl Point {
+    pub fn new(time: f64, val: Value) -> Self {
+        Self { time, val }
     }
 }
 
 pub struct TemplateApp {
     points: Vec<Point>,
+    time_mult: f64,
     x_mult: f64,
     y_mult: f64,
 }
@@ -45,7 +36,11 @@ impl TemplateApp {
     /// Called once before the first frame.
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         Self {
-            points: vec![Point::new(0.0, 0.0), Point::new(1.0, 1.0)],
+            points: vec![
+                Point::new(0.0, Value::new(0.0, 0.0)),
+                Point::new(1.0, Value::new(1.0, 1.0)),
+            ],
+            time_mult: 1.0,
             x_mult: 1.0,
             y_mult: 1.0,
         }
@@ -79,23 +74,23 @@ impl eframe::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
-                egui::DragValue::new(&mut self.x_mult)
-                    .clamp_to_range(true)
-                    .range(1.0..=f64::MAX)
-                    .prefix("x_mult: ")
-                    .speed(0.01)
-                    .ui(ui);
-                egui::DragValue::new(&mut self.y_mult)
-                    .clamp_to_range(true)
-                    .range(1.0..=f64::MAX)
-                    .prefix("y_mult: ")
-                    .speed(0.01)
-                    .ui(ui);
+                for (v, name) in [
+                    (&mut self.time_mult, "time_mult: "),
+                    (&mut self.x_mult, "x_mult: "),
+                    (&mut self.y_mult, "y_mult: "),
+                ] {
+                    egui::DragValue::new(v)
+                        .clamp_to_range(true)
+                        .range(1.0..=f64::MAX)
+                        .prefix(name)
+                        .speed(0.01)
+                        .ui(ui);
+                }
             });
 
             let mut i = 0;
-            let mut last = Point::new(0.0, 0.0);
-            let mut move_x = 0.0;
+            let mut last = Point::new(0.0, Value::new(0.0, 0.0));
+            let mut move_time = 0.0;
 
             let can_remove = self.points.len() > 2;
 
@@ -104,32 +99,37 @@ impl eframe::App for TemplateApp {
             self.points.retain_mut(|point| {
                 let mut retain = true;
                 ui.horizontal(|ui| {
-                    point.x += move_x;
-                    let o_x = point.x;
-                    let mut tmp_x = point.x * self.x_mult;
+                    point.time += move_time;
+                    let o_time = point.time;
+                    let mut tmp_time = point.time * self.time_mult;
 
-                    let r = egui::DragValue::new(&mut tmp_x)
+                    let r = egui::DragValue::new(&mut tmp_time)
                         .clamp_to_range(true)
-                        .range(last.x..=self.x_mult)
-                        .prefix("x: ")
+                        .range(last.time..=self.time_mult)
+                        .prefix("time: ")
                         .speed(0.01)
                         .ui(ui);
                     if r.changed() {
-                        point.x = tmp_x / self.x_mult;
-                        move_x = point.x - o_x;
+                        point.time = tmp_time / self.time_mult;
+                        move_time = point.time - o_time;
                     }
 
-                    let mut tmp_y = point.y * self.y_mult;
+                    for (val, name, mult) in [
+                        (&mut point.val.x, "x: ", self.x_mult),
+                        (&mut point.val.y, "y: ", self.y_mult),
+                    ] {
+                        let mut tmp = *val * mult;
 
-                    let r = egui::DragValue::new(&mut tmp_y)
-                        .clamp_to_range(true)
-                        .range(0.0..=self.y_mult)
-                        .prefix("y: ")
-                        .speed(0.01)
-                        .ui(ui);
+                        let r = egui::DragValue::new(&mut tmp)
+                            .clamp_to_range(true)
+                            .range(0.0..=mult)
+                            .prefix(name)
+                            .speed(0.01)
+                            .ui(ui);
 
-                    if r.changed() {
-                        point.y = tmp_y / self.y_mult;
+                        if r.changed() {
+                            *val = tmp / mult;
+                        }
                     }
 
                     ui.label("Linear");
@@ -162,69 +162,85 @@ impl eframe::App for TemplateApp {
                         let max_x = self
                             .points
                             .iter()
-                            .map(|p| TotalCmpF64(p.x))
+                            .map(|p| TotalCmpF64(p.val.x))
                             .max()
                             .unwrap()
                             .0;
                         let max_y = self
                             .points
                             .iter()
-                            .map(|p| TotalCmpF64(p.y))
+                            .map(|p| TotalCmpF64(p.val.y))
                             .max()
                             .unwrap()
                             .0;
                         for p in self.points.iter_mut() {
-                            p.x /= max_x;
-                            p.y /= max_y;
+                            p.val.x /= max_x;
+                            p.val.y /= max_y;
                         }
                     }
                 }
             });
 
             ui.horizontal(|ui| {
-                ui.label("integral:");
-                let mut integral = ron::ser::to_string(&intergral_of_points(&self.points)).unwrap();
+                ui.label("integrals:");
+                let int_x = intergral_of_points(self.points.iter().map(|p| (p.time, p.val.x)));
+                let int_y = intergral_of_points(self.points.iter().map(|p| (p.time, p.val.y)));
+                let mut integral = ron::ser::to_string(&(int_x, int_y)).unwrap();
                 ui.text_edit_singleline(&mut integral);
             });
 
-            egui_plot::Plot::new("plot")
-                .allow_drag(Vec2b::new(true, true))
-                .allow_zoom(Vec2b::new(true, true))
-                .allow_scroll(false)
-                .allow_double_click_reset(false)
-                .allow_boxed_zoom(false)
-                .data_aspect(1.0)
-                .auto_bounds(Vec2b::new(false, false))
-                .show(ui, |plot_ui| {
-                    let mut last = *self.points.first().unwrap();
-                    last.x *= self.x_mult;
-                    last.y *= self.y_mult;
-                    plot_ui.points(
-                        Points::new(last)
-                            .radius(5.0)
-                            .filled(true)
-                            .shape(egui_plot::MarkerShape::Circle),
-                    );
-                    for mut p in self.points[1..].iter().copied() {
-                        p.x *= self.x_mult;
-                        p.y *= self.y_mult;
-                        plot_ui.points(
-                            Points::new(p)
-                                .radius(5.0)
-                                .filled(true)
-                                .shape(egui_plot::MarkerShape::Circle),
-                        );
-                        plot_ui.line(Line::new([last, p].into_points()));
-                        last = p;
-                    }
-                });
+            let s = ui.available_size();
+
+            ui.horizontal(|ui| {
+                ui.set_max_height(s.y);
+                dbg!(s);
+                let points_x: Vec<_> = self
+                    .points
+                    .iter()
+                    .map(|p| PlotPoint::new(p.time * self.time_mult, p.val.x * self.x_mult))
+                    .collect();
+                let points_y: Vec<_> = self
+                    .points
+                    .iter()
+                    .map(|p| PlotPoint::new(p.time * self.time_mult, p.val.y * self.y_mult))
+                    .collect();
+                for (points, name) in [(points_x, "x plot"), (points_y, "y plot")] {
+                    egui_plot::Plot::new(name)
+                        .allow_drag(Vec2b::new(true, true))
+                        .allow_zoom(Vec2b::new(true, true))
+                        .allow_scroll(false)
+                        .allow_double_click_reset(false)
+                        .allow_boxed_zoom(false)
+                        .data_aspect(1.0)
+                        .width(s.x / 2.0)
+                        .height(s.x / 2.0)
+                        .auto_bounds(Vec2b::new(false, false))
+                        .show(ui, |plot_ui| {
+                            let mut last = *points.first().unwrap();
+                            plot_ui.points(
+                                Points::new(PlotPoints::Owned(vec![last]))
+                                    .radius(5.0)
+                                    .filled(true)
+                                    .shape(egui_plot::MarkerShape::Circle),
+                            );
+                            for p in points[1..].iter().copied() {
+                                plot_ui.points(
+                                    Points::new(PlotPoints::Owned(vec![p]))
+                                        .radius(5.0)
+                                        .filled(true)
+                                        .shape(egui_plot::MarkerShape::Circle),
+                                );
+                                plot_ui.line(Line::new(PlotPoints::Owned(vec![last, p])));
+                                last = p;
+                            }
+                        });
+                }
+            });
         });
     }
 }
 
-fn intergral_of_points(points: &[Point]) -> f64 {
-    let mut iter = points.into_iter();
-
+fn intergral_of_points(mut iter: impl Iterator<Item = (f64, f64)>) -> f64 {
     let mut integral = 0.0;
 
     let Some(mut last) = iter.next() else {
@@ -232,29 +248,29 @@ fn intergral_of_points(points: &[Point]) -> f64 {
     };
 
     for next in iter {
-        let d_x = next.x - last.x;
-        let d_y = next.y - last.y;
+        let d_t = next.0 - last.0;
+        let d_y = next.1 - last.1;
 
-        let m = d_y / d_x;
+        let m = d_y / d_t;
 
-        match (last.y >= 0.0, next.y >= 0.0) {
+        match (last.1 >= 0.0, next.1 >= 0.0) {
             (true, true) | (false, false) => {
                 // triangle at top
-                integral += d_x * d_y.abs() / 2.0 * next.y.signum();
+                integral += d_t * d_y.abs() / 2.0 * next.1.signum();
                 // square at bottom
-                integral += d_x * f64::min(last.y.abs(), next.y.abs()) * next.y.signum();
+                integral += d_t * f64::min(last.1.abs(), next.1.abs()) * next.1.signum();
             }
             (true, false) | (false, true) => {
                 // 2 triangles, crossing zero
 
-                let t1 = last.y / m;
-                let t2 = d_x - t1;
+                let t1 = last.1 / m;
+                let t2 = d_t - t1;
 
                 assert!(t1 >= 0.0);
                 assert!(t2 >= 0.0);
 
-                integral += t1 * last.y / 2.0;
-                integral += t2 * next.y / 2.0;
+                integral += t1 * last.1 / 2.0;
+                integral += t2 * next.1 / 2.0;
             }
         }
 
