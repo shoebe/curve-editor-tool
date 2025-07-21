@@ -1,4 +1,4 @@
-# Little line/point editor too;
+# Little line/point editor tool
 
 https://shoebe.github.io/bezier-editor-tool/
 
