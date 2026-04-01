@@ -2,10 +2,11 @@ use std::time::Duration;
 
 use egui::Vec2b;
 use egui_plot::{Line, PlotPoint, PlotPoints, Points};
+use total_cmp_float_wrapper::TotalCmpF64;
 
 use crate::math::{EguiPlotPointExt, closest_point_on_line};
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Copy)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, PartialEq)]
 pub struct Point {
     time: f64,
     val: f64,
@@ -41,7 +42,7 @@ enum PlotId {
 #[derive(Default)]
 pub struct TemplateApp {
     points: AppPoints,
-    selected_point_i: Option<(PlotId, usize)>,
+    selected_point_i: Option<(PlotId, usize, bool)>,
     toasts: egui_notify::Toasts,
 }
 
@@ -142,9 +143,21 @@ impl eframe::App for TemplateApp {
                 self.selected_point_i = None;
             }
 
+            if ui.input(|input| input.key_down(egui::Key::Delete))
+                && let Some((plot_id, point_ind, drag_released)) = self.selected_point_i
+                && drag_released
+            {
+                let points = match plot_id {
+                    PlotId::X => &mut self.points.x,
+                    PlotId::Y => &mut self.points.y,
+                };
+
+                points.remove(point_ind);
+                self.selected_point_i = None;
+            }
+
             ui.vertical_centered(|ui| {
                 ui.set_max_height(s.y);
-                dbg!(s);
                 let points_x: Vec<_> = self
                     .points
                     .x
@@ -179,7 +192,19 @@ impl eframe::App for TemplateApp {
                                 [1.0, 1.0],
                             ));
 
-                            if let Some((sel_plot_id, point_i)) = self.selected_point_i {
+                            if let Some((sel_plot_id, point_i, drag_released)) =
+                                self.selected_point_i
+                                && sel_plot_id == plot_id
+                                && !drag_released
+                                && !plot_ui.response().is_pointer_button_down_on()
+                            {
+                                self.selected_point_i = Some((sel_plot_id, point_i, true));
+                            }
+
+                            if let Some((sel_plot_id, point_i, drag_released)) =
+                                self.selected_point_i
+                                && drag_released
+                            {
                                 if sel_plot_id == plot_id {
                                     let point = match plot_id {
                                         PlotId::X => self.points.x[point_i],
@@ -188,24 +213,31 @@ impl eframe::App for TemplateApp {
 
                                     let plot_point =
                                         egui_plot::PlotPoint::new(point.time, point.val);
-                                    if plot_ui.response().clicked() {
+                                    if plot_ui.response().is_pointer_button_down_on() {
                                         let pointer_pos =
                                             plot_ui.response().interact_pointer_pos().unwrap();
                                         let pointer_plot = plot_ui.plot_from_screen(pointer_pos);
 
-                                        if plot_point.distance(pointer_plot) > POINTER_DISTANCE_SNAP
+                                        if plot_point.distance(pointer_plot)
+                                            <= POINTER_DISTANCE_SNAP
                                         {
+                                            self.selected_point_i =
+                                                Some((sel_plot_id, point_i, false))
+                                        } else {
                                             self.selected_point_i = None;
                                         }
                                     }
                                 } else {
-                                    if plot_ui.response().clicked() {
+                                    if plot_ui.response().is_pointer_button_down_on() {
                                         self.selected_point_i = None;
                                     }
                                 }
                             }
 
-                            if let Some(hover_pos) = plot_ui.response().hover_pos() {
+                            if (self.selected_point_i.is_none()
+                                || (self.selected_point_i.map(|p| p.0) != Some(plot_id)))
+                                && let Some(hover_pos) = plot_ui.response().hover_pos()
+                            {
                                 let hover_plot_pos = plot_ui.plot_from_screen(hover_pos);
                                 let (point_i, dist) = points
                                     .iter()
@@ -224,14 +256,16 @@ impl eframe::App for TemplateApp {
                                 if dist < POINTER_DISTANCE_SNAP
                                     && plot_ui.response().is_pointer_button_down_on()
                                 {
-                                    self.selected_point_i = Some((plot_id, point_i));
+                                    self.selected_point_i = Some((plot_id, point_i, false));
                                 }
                             }
 
-                            if let Some((sel_plot_id, point_i)) = self.selected_point_i
+                            if let Some((sel_plot_id, point_i, drag_released)) =
+                                self.selected_point_i
                                 && sel_plot_id == plot_id
-                                && plot_ui.response().dragged()
-                                && let Some(drag_pos) = plot_ui.response().interact_pointer_pos()
+                                && !drag_released
+                                && plot_ui.response().is_pointer_button_down_on()
+                                && let Some(drag_pos) = plot_ui.response().hover_pos()
                             {
                                 let drag_plot_pos = plot_ui.plot_from_screen(drag_pos);
 
@@ -240,17 +274,25 @@ impl eframe::App for TemplateApp {
                                     PlotId::Y => &mut self.points.y,
                                 };
 
-                                let time_frozen = point_i == 0 || point_i == (points.len() - 1);
+                                let min_time = if point_i == 0 {
+                                    0.0
+                                } else {
+                                    points[point_i - 1].time
+                                };
+                                let max_time = if point_i == (points.len() - 1) {
+                                    1.0
+                                } else {
+                                    points[point_i + 1].time
+                                };
 
-                                if !time_frozen {
-                                    points[point_i].time = drag_plot_pos.x;
-                                }
+                                points[point_i].time = drag_plot_pos.x.clamp(min_time, max_time);
 
-                                points[point_i].val = drag_plot_pos.y;
+                                points[point_i].val = drag_plot_pos.y.clamp(0.0, 1.0);
                             }
 
                             for (p_i, p) in points.iter().copied().enumerate() {
-                                let is_sel = Some((plot_id, p_i)) == self.selected_point_i;
+                                let is_sel = Some((plot_id, p_i))
+                                    == self.selected_point_i.map(|p| (p.0, p.1));
                                 plot_ui.points(
                                     Points::new("point", PlotPoints::Owned(vec![p]))
                                         .id(egui::Id::new("point").with(p_i))
@@ -261,23 +303,29 @@ impl eframe::App for TemplateApp {
                                 );
                             }
 
-                            let mut last = *points.first().unwrap();
-                            let mut it = points.iter().copied().enumerate();
-                            it.next(); // skip first elem
+                            let lines: Vec<_> = points
+                                .array_windows::<2>()
+                                .enumerate()
+                                .map(|(ind, [p1, p2])| {
+                                    Line::new("line", PlotPoints::Owned(vec![*p1, *p2]))
+                                        .id(egui::Id::new("line").with(ind))
+                                        .allow_hover(false)
+                                })
+                                .collect();
 
-                            for (p_i, p) in it {
-                                plot_ui.line(
-                                    Line::new("line", PlotPoints::Owned(vec![last, p]))
-                                        .id(egui::Id::new("line").with(p_i)),
-                                );
-                                if self.selected_point_i.is_none()
-                                    && let Some(pos) = plot_ui.response().hover_pos()
-                                {
-                                    let plot_pos = plot_ui.plot_from_screen(pos);
+                            for line in lines {
+                                plot_ui.line(line);
+                            }
+
+                            if self.selected_point_i.is_none()
+                                && let Some(pos) = plot_ui.response().hover_pos()
+                            {
+                                let plot_pos = plot_ui.plot_from_screen(pos);
+                                for [p1, p2] in points.array_windows::<2>().copied() {
                                     let (distance, pos) = closest_point_on_line(
                                         plot_pos.to_pos2(),
-                                        last.to_pos2(),
-                                        p.to_pos2(),
+                                        p1.to_pos2(),
+                                        p2.to_pos2(),
                                     );
                                     if distance < 0.02 {
                                         plot_ui.points(
@@ -291,9 +339,26 @@ impl eframe::App for TemplateApp {
                                             .filled(true)
                                             .shape(egui_plot::MarkerShape::Circle),
                                         );
+
+                                        if plot_ui.response().is_pointer_button_down_on() {
+                                            let app_points = match plot_id {
+                                                PlotId::X => &mut self.points.x,
+                                                PlotId::Y => &mut self.points.y,
+                                            };
+                                            let point = Point {
+                                                time: pos.x as f64,
+                                                val: pos.y as f64,
+                                            };
+                                            app_points.push(point);
+                                            app_points.sort_by_key(|p| TotalCmpF64(p.time));
+                                            let ind = app_points
+                                                .iter()
+                                                .position(|lp| *lp == point)
+                                                .unwrap();
+                                            self.selected_point_i = Some((plot_id, ind, false));
+                                        }
                                     }
                                 }
-                                last = p;
                             }
                         });
                 }
